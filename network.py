@@ -2,6 +2,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
 from torch.distributions.normal import Normal
 from gym.spaces import Box, Discrete
@@ -72,7 +73,7 @@ class ActorCritic(nn.Module):
         if policy is None:
             if isinstance(action_space, Box):
                 self.policy = GaussianPolicy(input_dim, hidden_dims, activation, output_activation, action_space.shape[0])
-            else isinstance(action_space, Discrete):
+            elif isinstance(action_space, Discrete):
                 self.policy = CategoricalPolicy(input_dim, hidden_dims, activation, output_activation, action_space.n)
         else: 
             self.policy = policy(input_dim, hidden_dims, activation, output_activation, action_space)
@@ -84,3 +85,25 @@ class ActorCritic(nn.Module):
         v= self.value_f(x)
 
         return pi, logp, logp_pi, v
+
+# Bidirectional LSTM for encoding trajectories
+# Batch-first used
+# input: (batch_size, seq_len, input_dim) where input concatenate state and action
+# inter_state: (batch_size, seq_len, 2*hidden_dims)
+# linear_output: (batch_size, seq_len, context_dim)
+# avg_logits: (batch_size, context_dim)
+class Discriminator(nn.Module):
+    def __init__(self, input_dim, context_dim, output_activation=torch.softmax, num_layers=1, hidden_dims=64):
+        super(Discriminator, self).__init__()
+
+        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dims, batch_first=True, bidirectional=True)
+        self.linear = nn.Linear(hidden_dims*2, context_dim)
+        nn.init.zeros_(self.linear.bias)
+
+    def forward(self, seq):
+        inter_state, _ = self.lstm(seq)
+        linear_output = self.linear(inter_state)
+        logits = F.softmax(linear_output, dim=-1)
+        avg_logits = np.mean(logits, axis=1)
+
+        return avg_logits
