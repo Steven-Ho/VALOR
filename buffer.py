@@ -14,7 +14,7 @@ class Buffer(object):
         self.max_s = batch_size * ep_len
         self.obs = np.zeros((self.max_s, obs_dim))
         self.act = np.zeros((self.max_s, act_dim))
-        self.con = np.zeros((self.max_s, con_dim))
+        self.con = np.zeros((self.max_batch, con_dim))
         self.rew = np.zeros(self.max_s)
         self.ret = np.zeros(self.max_s)
         self.adv = np.zeros(self.max_s)
@@ -26,7 +26,7 @@ class Buffer(object):
 
         self.N = 11
 
-        self.dcbuf = np.zeros((self.max_batch, self.N-1, obs_dim + act_dim))
+        self.dcbuf = np.zeros((self.max_batch, self.N-1, obs_dim))
 
         self.gamma = gamma
         self.lam = lam
@@ -35,7 +35,7 @@ class Buffer(object):
         assert self.ptr < self.max_s
         self.obs[self.ptr] = obs
         self.act[self.ptr] = act
-        self.con[self.ptr] = con
+        self.con[self.eps] = con
         self.rew[self.ptr] = rew
         self.val[self.ptr] = val
         self.lgt[self.ptr] = lgt
@@ -51,11 +51,22 @@ class Buffer(object):
         self.ret[ep_slice] = returns[:-1]
         self.adv[ep_slice] = scipy.signal.lfilter([1], [1, float(-self.gamma * self.lam)], deltas[::-1], axis=0)[::-1]
 
+        # Store differences into a specific memory
+        # TODO: convert this into vector operation
+        start = self.end[self.eps]
+        ep_l = self.ptr - start - 1
+        for i in range(self.N):
+            prev = int(i*ep_l/self.N)
+            succ = int((i+1)*ep_l/self.N)
+            self.dcbuf[self.eps, i] = self.obs[start + succ] - self.obs[start + prev]
+
         self.eps += 1
         self.end[self.eps] = self.ptr
 
     def retrive_all(self):
         assert self.eps == self.max_batch
-        boundaries = self.end 
-        # TODO: MPI Statistics for batch mean and std
-        return self.end, [self.obs, self.act, self.adv, self.ret, self.lgt]
+        occup_slice = slice(0, self.ptr)
+        adv_mean, adv_std = mpi_statistics_scalar(self.adv[occup_slice])
+        self.adv[occup_slice] = (self.adv[occup_slice] - adv_mean) / adv_std
+        return [self.obs[occup_slice], self.act[occup_slice], self.adv[occup_slice],
+            self.ret[occup_slice], self.lgt[occup_slice], self.con, self.dcbuf]

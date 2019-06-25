@@ -132,7 +132,7 @@ class Logger:
             with open(osp.join(self.output_dir, "config.json"), 'w') as out:
                 out.write(output)
 
-    def save_state(self, state_dict, model, itr=None):
+    def save_state(self, state_dict, models, itr=None):
         """
         Saves the state of an experiment.
 
@@ -158,11 +158,12 @@ class Logger:
                 joblib.dump(state_dict, osp.join(self.output_dir, fname))
             except:
                 self.log('Warning: could not pickle state_dict.', color='red')
-            self._torch_save(model, itr)
+            for m in models:
+                self._torch_save(m, itr)
 
     def _torch_save(self, model, itr=None):
         if proc_id()==0:
-            fname = 'torch_save.pt' if itr is None else 'torch_save%d.pt'%itr
+            fname = model.__name__ + '_torch_save.pt' if itr is None else 'torch_save%d.pt'%itr
             torch.save(model, osp.join(self.output_dir, fname))
 
     def dump_tabular(self):
