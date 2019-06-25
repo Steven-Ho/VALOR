@@ -9,7 +9,7 @@ from utils.mpi_torch import average_gradients, sync_all_params
 from utils.mpi_tools import mpi_fork, proc_id, mpi_statistics_scalar, num_procs
 
 class Buffer(object):
-    def __init__(self, con_dim, obs_dim, act_dim, batch_size, ep_len, gamma=0.99, lam=0.95):
+    def __init__(self, con_dim, obs_dim, act_dim, batch_size, ep_len, gamma=0.99, lam=0.95, N=11):
         self.max_batch = batch_size
         self.max_s = batch_size * ep_len
         self.obs = np.zeros((self.max_s, obs_dim))
@@ -23,6 +23,10 @@ class Buffer(object):
         self.end = np.zeros(batch_size + 1) # The first will always be 0
         self.ptr = 0
         self.eps = 0
+
+        self.N = 11
+
+        self.dcbuf = np.zeros((self.max_batch, self.N-1, obs_dim + act_dim))
 
         self.gamma = gamma
         self.lam = lam

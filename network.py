@@ -66,6 +66,27 @@ class CategoricalPolicy(nn.Module):
 
         return pi, logp, logp_pi
 
+class BLSTMPolicy(nn.Module):
+    def __init__(self, input_dim, hidden_dims, activation, output_activation, con_dim):
+        super(BLSTMPolicy, self).__init__()
+        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dims, batch_first=True, bidirectional=True)
+        self.linear = nn.Linear(hidden_dims*2, con_dim)
+        nn.init.zeros_(self.linear.bias)
+
+    def forward(self, seq, gt=None):
+        inter_states, _ = self.lstm(seq)
+        logit_seq = self.linear(inter_states)
+        self.logits = torch.mean(logit_seq, axis=1)
+        policy = Categorical(logits=self.logits)
+        label = policy.sample()
+        logp = policy.log_prob(label).squeeze()
+        if gt is not None:
+            loggt = policy.log_prob(gt).squeeze()
+        else:
+            loggt = None
+
+        return label, loggt, logp
+
 class ActorCritic(nn.Module):
     def __init__(self, input_dim, action_space, hidden_dims=(64, 64), activation=torch.tanh, output_activation=None, policy=None):
         super(ActorCritic, self).__init__()
@@ -88,22 +109,19 @@ class ActorCritic(nn.Module):
 
 # Bidirectional LSTM for encoding trajectories
 # Batch-first used
-# input: (batch_size, seq_len, input_dim) where input concatenate state and action
+# input: (batch_size, seq_len, input_dim)
 # inter_state: (batch_size, seq_len, 2*hidden_dims)
 # linear_output: (batch_size, seq_len, context_dim)
 # avg_logits: (batch_size, context_dim)
 class Discriminator(nn.Module):
-    def __init__(self, input_dim, context_dim, output_activation=torch.softmax, num_layers=1, hidden_dims=64):
+    def __init__(self, input_dim, context_dim, activation=torch.softmax, output_activation=torch.softmax, hidden_dims=64):
         super(Discriminator, self).__init__()
 
-        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dims, batch_first=True, bidirectional=True)
-        self.linear = nn.Linear(hidden_dims*2, context_dim)
-        nn.init.zeros_(self.linear.bias)
+        self.policy = BLSTMPolicy(input_dim, hidden_dims, activation, output_activation, context_dim)
 
-    def forward(self, seq):
-        inter_state, _ = self.lstm(seq)
-        linear_output = self.linear(inter_state)
-        logits = F.softmax(linear_output, dim=-1)
-        avg_logits = np.mean(logits, axis=1)
+    def forward(self, seq, gt=None):
+        pred, loggt, logp = self.policy(seq, gt)
+        return pred, loggt, logp
 
-        return avg_logits
+def count_vars(module):
+    return sum(p.numel() for p in module.parameters() if p.requires_grad)
