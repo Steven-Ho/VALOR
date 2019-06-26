@@ -76,7 +76,7 @@ class BLSTMPolicy(nn.Module):
     def forward(self, seq, gt=None):
         inter_states, _ = self.lstm(seq)
         logit_seq = self.linear(inter_states)
-        self.logits = torch.mean(logit_seq, axis=1)
+        self.logits = torch.mean(logit_seq, dim=1)
         policy = Categorical(logits=self.logits)
         label = policy.sample()
         logp = policy.log_prob(label).squeeze()
