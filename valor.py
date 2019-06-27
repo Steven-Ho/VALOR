@@ -13,7 +13,8 @@ from utils.mpi_torch import average_gradients, sync_all_params
 from utils.logx import EpochLogger
 
 def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator, dc_kwargs=dict(), seed=0, episodes_per_epoch=40, epochs=50, gamma=0.99,
-        pi_lr=3e-4, vf_lr=1e-3, dc_lr=5e-4, train_v_iters=80, train_dc_iters=10, lam=0.97, max_ep_len=1000, logger_kwargs=dict(), con_dim=5, save_freq=10):
+        pi_lr=3e-4, vf_lr=1e-3, dc_lr=5e-4, train_v_iters=80, train_dc_iters=10, lam=0.97, max_ep_len=1000, logger_kwargs=dict(), con_dim=5, save_freq=10,
+        k=0.):
 
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
@@ -51,14 +52,14 @@ def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator
     sync_all_params(disc.parameters())
 
     def update():
-        obs, act, adv, ret, logp_old, con, s_diff = [torch.Tensor(x) for x in buffer.retrive_all()]
+        obs, act, adv, pos, ret, logp_old, con, s_diff = [torch.Tensor(x) for x in buffer.retrive_all()]
         
         # Policy
         _, logp, _ = actor_critic.policy(obs, act)
         entropy = (-logp).mean()
 
         # Policy loss
-        pi_loss = -(logp*adv).mean()
+        pi_loss = -(logp*(k*adv+pos)).mean()
 
         # Train policy
         train_pi.zero_grad()
@@ -95,12 +96,13 @@ def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator
         # Log the changes
         _, logp, _, v = actor_critic(obs, act)
         _, logp_dc, _ = disc(s_diff, con)
-        pi_l_new = -(logp*adv).mean()
+        pi_l_new = -(logp*(k*adv+pos)).mean()
         v_l_new = F.mse_loss(v, ret)
         dc_l_new = -logp_dc.mean()
         kl = (logp_old - logp).mean()
         logger.store(LossPi=pi_loss, LossV=v_l_old, LossDC=d_l_old, KL=kl, Entropy=entropy, DeltaLossPi=(pi_l_new-pi_loss),
             DeltaLossV=(v_l_new-v_l_old), DeltaLossDC=(dc_l_new-d_l_old))
+        # logger.store(Adv=adv.reshape(-1).numpy().tolist(), Pos=pos.reshape(-1).numpy().tolist())
 
     start_time = time.time()
     o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
@@ -168,7 +170,7 @@ if __name__ == '__main__':
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--seed', '-s', type=int, default=0)
-    parser.add_argument('--cpu', type=int, default=4)
+    parser.add_argument('--cpu', type=int, default=8)
     parser.add_argument('--episodes', type=int, default=40)
     parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--exp_name', type=str, default='valor')

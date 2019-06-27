@@ -69,8 +69,8 @@ class CategoricalPolicy(nn.Module):
 class BLSTMPolicy(nn.Module):
     def __init__(self, input_dim, hidden_dims, activation, output_activation, con_dim):
         super(BLSTMPolicy, self).__init__()
-        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dims, batch_first=True, bidirectional=True)
-        self.linear = nn.Linear(hidden_dims*2, con_dim)
+        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dims//2, batch_first=True, bidirectional=True)
+        self.linear = nn.Linear(hidden_dims, con_dim)
         nn.init.zeros_(self.linear.bias)
 
     def forward(self, seq, gt=None):

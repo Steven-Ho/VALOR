@@ -234,7 +234,10 @@ class EpochLogger(Logger):
         for k,v in kwargs.items():
             if not(k in self.epoch_dict.keys()):
                 self.epoch_dict[k] = []
-            self.epoch_dict[k].append(v)
+            if isinstance(v, list):
+                self.epoch_dict[k] += v
+            else:
+                self.epoch_dict[k].append(v)
 
     def log_tabular(self, key, val=None, with_min_and_max=False, average_only=False):
         """

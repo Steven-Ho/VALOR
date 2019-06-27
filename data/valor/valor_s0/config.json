@@ -12,14 +12,15 @@
     },
     "dc_lr":	0.0005,
     "disc":	"Discriminator",
-    "env_fn":	"<function <lambda> at 0x7fc0edb3e0d0>",
+    "env_fn":	"<function <lambda> at 0x7fcbaea830d0>",
     "episodes_per_epoch":	40,
     "epochs":	500,
     "exp_name":	"valor",
     "gamma":	0.99,
+    "k":	0.0,
     "lam":	0.97,
     "logger":	{
-        "<utils.logx.EpochLogger object at 0x7fc0edb423c8>":	{
+        "<utils.logx.EpochLogger object at 0x7fcbaea86390>":	{
             "epoch_dict":	{},
             "exp_name":	"valor",
             "first_row":	true,
@@ -41,6 +42,7 @@
     "pi_lr":	0.0003,
     "save_freq":	10,
     "seed":	0,
+    "train_dc_iters":	10,
     "train_v_iters":	80,
     "vf_lr":	0.001
 }
