@@ -14,7 +14,7 @@ from utils.logx import EpochLogger
 
 def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator, dc_kwargs=dict(), seed=0, episodes_per_epoch=40,
         epochs=50, gamma=0.99, pi_lr=3e-4, vf_lr=1e-3, dc_lr=5e-4, train_v_iters=80, train_dc_iters=10, train_dc_interv=10, 
-        lam=0.97, max_ep_len=1000, logger_kwargs=dict(), con_dim=5, save_freq=10, k=0.1):
+        lam=0.97, max_ep_len=1000, logger_kwargs=dict(), con_dim=5, save_freq=10, k=1):
 
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
@@ -179,7 +179,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--cpu', type=int, default=8)
     parser.add_argument('--episodes', type=int, default=40)
-    parser.add_argument('--epochs', type=int, default=500)
+    parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--exp_name', type=str, default='valor')
     parser.add_argument('--con', type=int, default=5)
     args = parser.parse_args()
