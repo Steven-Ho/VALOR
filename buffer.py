@@ -9,13 +9,13 @@ from utils.mpi_torch import average_gradients, sync_all_params
 from utils.mpi_tools import mpi_fork, proc_id, mpi_statistics_scalar, num_procs
 
 class Buffer(object):
-    def __init__(self, con_dim, obs_dim, act_dim, batch_size, ep_len, gamma=0.99, lam=0.95, N=11):
+    def __init__(self, con_dim, obs_dim, act_dim, batch_size, ep_len, dc_interv, gamma=0.99, lam=0.95, N=11):
         self.max_batch = batch_size
+        self.dc_interv = dc_interv
         self.max_s = batch_size * ep_len
         self.obs_dim = obs_dim
         self.obs = np.zeros((self.max_s, obs_dim + con_dim))
         self.act = np.zeros((self.max_s, act_dim))
-        self.con = np.zeros(self.max_batch)
         self.rew = np.zeros(self.max_s)
         self.ret = np.zeros(self.max_s)
         self.adv = np.zeros(self.max_s)
@@ -25,10 +25,12 @@ class Buffer(object):
         self.end = np.zeros(batch_size + 1) # The first will always be 0
         self.ptr = 0
         self.eps = 0
+        self.dc_eps = 0
 
         self.N = 11
 
-        self.dcbuf = np.zeros((self.max_batch, self.N-1, obs_dim))
+        self.con = np.zeros(self.max_batch * self.dc_interv)
+        self.dcbuf = np.zeros((self.max_batch * self.dc_interv, self.N-1, obs_dim))
 
         self.gamma = gamma
         self.lam = lam
@@ -67,9 +69,10 @@ class Buffer(object):
         self.pos[ep_slice] = pret_pos
 
         self.eps += 1
+        self.dc_eps += 1
         self.end[self.eps] = self.ptr
 
-    def retrive_all(self):
+    def retrieve_all(self):
         assert self.eps == self.max_batch
         occup_slice = slice(0, self.ptr)
         self.ptr = 0
@@ -79,4 +82,9 @@ class Buffer(object):
         self.adv[occup_slice] = (self.adv[occup_slice] - adv_mean) / adv_std
         self.pos[occup_slice] = (self.pos[occup_slice] - pos_mean) / pos_std
         return [self.obs[occup_slice], self.act[occup_slice], self.adv[occup_slice], self.pos[occup_slice],
-            self.ret[occup_slice], self.lgt[occup_slice], self.con, self.dcbuf]
+            self.ret[occup_slice], self.lgt[occup_slice]]
+
+    def retrieve_dc_buff(self):
+        assert self.dc_eps == self.max_batch * self.dc_interv
+        self.dc_eps = 0
+        return [self.con, self.dcbuf]

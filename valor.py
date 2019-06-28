@@ -12,9 +12,9 @@ from utils.mpi_tools import mpi_fork, proc_id, mpi_statistics_scalar, num_procs
 from utils.mpi_torch import average_gradients, sync_all_params
 from utils.logx import EpochLogger
 
-def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator, dc_kwargs=dict(), seed=0, episodes_per_epoch=40, epochs=50, gamma=0.99,
-        pi_lr=3e-4, vf_lr=1e-3, dc_lr=5e-4, train_v_iters=80, train_dc_iters=10, lam=0.97, max_ep_len=1000, logger_kwargs=dict(), con_dim=5, save_freq=10,
-        k=0.):
+def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator, dc_kwargs=dict(), seed=0, episodes_per_epoch=40,
+        epochs=50, gamma=0.99, pi_lr=3e-4, vf_lr=1e-3, dc_lr=5e-4, train_v_iters=80, train_dc_iters=10, train_dc_interv=10, 
+        lam=0.97, max_ep_len=1000, logger_kwargs=dict(), con_dim=5, save_freq=10, k=0.1):
 
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
@@ -35,7 +35,7 @@ def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator
 
     # Buffer
     local_episodes_per_epoch = int(episodes_per_epoch / num_procs())
-    buffer = Buffer(con_dim, obs_dim[0], act_dim[0], local_episodes_per_epoch, max_ep_len)
+    buffer = Buffer(con_dim, obs_dim[0], act_dim[0], local_episodes_per_epoch, max_ep_len, train_dc_interv)
 
     # Count variables
     var_counts = tuple(count_vars(module) for module in
@@ -51,8 +51,8 @@ def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator
     sync_all_params(actor_critic.parameters())
     sync_all_params(disc.parameters())
 
-    def update():
-        obs, act, adv, pos, ret, logp_old, con, s_diff = [torch.Tensor(x) for x in buffer.retrive_all()]
+    def update(e):
+        obs, act, adv, pos, ret, logp_old = [torch.Tensor(x) for x in buffer.retrieve_all()]
         
         # Policy
         _, logp, _ = actor_critic.policy(obs, act)
@@ -81,27 +81,34 @@ def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator
             train_v.step()
 
         # Discriminator
-        _, logp_dc, _ = disc(s_diff, con)
-        d_l_old = -logp_dc.mean()
-        for _ in range(train_dc_iters):
+        if (e+1) % train_dc_interv == 0:
+            print('Discriminator Update!')
+            con, s_diff = [torch.Tensor(x) for x in buffer.retrieve_dc_buff()]
             _, logp_dc, _ = disc(s_diff, con)
-            d_loss = -logp_dc.mean()
+            d_l_old = -logp_dc.mean()
 
             # Discriminator train
-            train_dc.zero_grad()
-            d_loss.backward()
-            average_gradients(train_dc.param_groups)
-            train_dc.step()
+            for _ in range(train_dc_iters):
+                _, logp_dc, _ = disc(s_diff, con)
+                d_loss = -logp_dc.mean()
+                train_dc.zero_grad()
+                d_loss.backward()
+                average_gradients(train_dc.param_groups)
+                train_dc.step()
+
+            _, logp_dc, _ = disc(s_diff, con)
+            dc_l_new = -logp_dc.mean()
+        else:
+            d_l_old = 0
+            dc_l_new = 0
 
         # Log the changes
         _, logp, _, v = actor_critic(obs, act)
-        _, logp_dc, _ = disc(s_diff, con)
         pi_l_new = -(logp*(k*adv+pos)).mean()
         v_l_new = F.mse_loss(v, ret)
-        dc_l_new = -logp_dc.mean()
         kl = (logp_old - logp).mean()
-        logger.store(LossPi=pi_loss, LossV=v_l_old, LossDC=d_l_old, KL=kl, Entropy=entropy, DeltaLossPi=(pi_l_new-pi_loss),
-            DeltaLossV=(v_l_new-v_l_old), DeltaLossDC=(dc_l_new-d_l_old))
+        logger.store(LossPi=pi_loss, LossV=v_l_old, KL=kl, Entropy=entropy, DeltaLossPi=(pi_l_new-pi_loss),
+            DeltaLossV=(v_l_new-v_l_old), LossDC=d_l_old, DeltaLossDC=(dc_l_new-d_l_old))
         # logger.store(Adv=adv.reshape(-1).numpy().tolist(), Pos=pos.reshape(-1).numpy().tolist())
 
     start_time = time.time()
@@ -143,7 +150,7 @@ def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator
         actor_critic.train()
         disc.train()
 
-        update()
+        update(epoch)
 
         # Log
         logger.log_tabular('Epoch', epoch)
@@ -152,10 +159,10 @@ def valor(env_fn, actor_critic=ActorCritic, ac_kwargs=dict(), disc=Discriminator
         logger.log_tabular('VVals', with_min_and_max=True)
         logger.log_tabular('TotalEnvInteracts', total_t)
         logger.log_tabular('LossPi', average_only=True)
-        logger.log_tabular('LossV', average_only=True)
-        logger.log_tabular('LossDC', average_only=True)
         logger.log_tabular('DeltaLossPi', average_only=True)
+        logger.log_tabular('LossV', average_only=True)
         logger.log_tabular('DeltaLossV', average_only=True)
+        logger.log_tabular('LossDC', average_only=True)
         logger.log_tabular('DeltaLossDC', average_only=True)
         logger.log_tabular('Entropy', average_only=True)
         logger.log_tabular('KL', average_only=True)
